@@ -7,6 +7,8 @@ import queue
 import threading
 import time
 import os
+import subprocess
+import sys
 from config import (
     SAMPLE_RATE, RECORD_SECONDS, VOICE_LANGUAGE,
     VOICE_RATE, VOICE_VOLUME, MICROPHONE_DEVICE,
@@ -52,7 +54,7 @@ class VoiceEngine:
             logger.error(f"TTS config error: {e}")
     
     def _start_tts_worker(self):
-        """Start TTS worker thread - non-blocking speech"""
+        """Start TTS worker thread - uses system voice with proper synchronization"""
         def worker():
             while self.is_running:
                 try:
@@ -63,15 +65,26 @@ class VoiceEngine:
                     if text.strip():
                         logger.info(f"Speaking: {text}")
                         try:
-                            # Use non-blocking approach
-                            self.tts_engine.say(text)
-                            self.tts_engine.runAndWait()
-                            time.sleep(0.5)  # Small delay between speeches
+                            # Use PowerShell on Windows for more reliable TTS
+                            if sys.platform == "win32":
+                                # PowerShell command to speak text
+                                ps_command = f'Add-Type -AssemblyName System.Speech; $speak = New-Object System.Speech.Synthesis.SpeechSynthesizer; $speak.Speak(\'{text.replace(chr(39), "")}\');'
+                                subprocess.run(
+                                    ["powershell", "-Command", ps_command],
+                                    check=False,
+                                    capture_output=True,
+                                    timeout=30
+                                )
+                            else:
+                                # Fallback to pyttsx3 for non-Windows
+                                self.tts_engine.say(text)
+                                self.tts_engine.runAndWait()
+                        except subprocess.TimeoutExpired:
+                            logger.error("TTS timeout")
                         except Exception as e:
                             logger.error(f"TTS playback error: {e}")
                             try:
-                                self.tts_engine.stop()
-                                time.sleep(0.2)
+                                # Fallback to pyttsx3
                                 self.tts_engine.say(text)
                                 self.tts_engine.runAndWait()
                             except Exception as retry_e:
