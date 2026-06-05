@@ -1,5 +1,4 @@
 PyQt6==6.7.0
-PyQt6-QtWebEngine==6.7.0
 ollama==0.1.0
 pyttsx3==2.91
 sounddevice==0.4.6
