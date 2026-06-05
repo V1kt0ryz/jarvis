@@ -52,38 +52,43 @@ class VoiceEngine:
             logger.error(f"TTS config error: {e}")
     
     def _start_tts_worker(self):
-        """Start TTS worker thread"""
+        """Start TTS worker thread - non-blocking speech"""
         def worker():
             while self.is_running:
                 try:
-                    text = self.speech_queue.get()
+                    text = self.speech_queue.get(timeout=1)
                     if text is None:
                         break
                     
                     if text.strip():
                         logger.info(f"Speaking: {text}")
                         try:
+                            # Use non-blocking approach
                             self.tts_engine.say(text)
                             self.tts_engine.runAndWait()
+                            time.sleep(0.5)  # Small delay between speeches
                         except Exception as e:
                             logger.error(f"TTS playback error: {e}")
-                            # Try alternative approach
                             try:
                                 self.tts_engine.stop()
+                                time.sleep(0.2)
                                 self.tts_engine.say(text)
                                 self.tts_engine.runAndWait()
-                            except:
-                                logger.error(f"TTS retry failed")
+                            except Exception as retry_e:
+                                logger.error(f"TTS retry failed: {retry_e}")
+                except queue.Empty:
+                    continue
                 except Exception as e:
-                    logger.error(f"TTS Error: {e}")
+                    logger.error(f"TTS Worker Error: {e}")
         
-        threading.Thread(target=worker, daemon=True).start()
+        self.tts_thread = threading.Thread(target=worker, daemon=True)
+        self.tts_thread.start()
     
     def speak(self, text):
         """Add text to speech queue"""
         if text and text.strip():
             self.speech_queue.put(text)
-            logger.info(f"Added to speech queue: {text[:50]}...")
+            logger.info(f"Queued speech: {text[:50]}...")
     
     def listen(self, seconds=RECORD_SECONDS):
         """Listen to microphone and transcribe"""
@@ -179,3 +184,6 @@ class VoiceEngine:
             self.tts_engine.stop()
         except:
             pass
+        # Wait for TTS thread to finish
+        if hasattr(self, 'tts_thread'):
+            self.tts_thread.join(timeout=2)
