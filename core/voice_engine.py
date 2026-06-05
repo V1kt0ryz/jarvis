@@ -34,11 +34,12 @@ class VoiceEngine:
     def _configure_tts(self):
         """Configure text-to-speech engine"""
         try:
+            # Set to use SAPI5 on Windows for better compatibility
             voices = self.tts_engine.getProperty("voices")
             if voices:
                 # Try to use German voice
                 for voice in voices:
-                    if "german" in voice.languages or "de" in voice.id.lower():
+                    if "german" in str(voice.languages).lower() or "de" in voice.id.lower():
                         self.tts_engine.setProperty("voice", voice.id)
                         break
                 else:
@@ -59,9 +60,20 @@ class VoiceEngine:
                     if text is None:
                         break
                     
-                    logger.info(f"Speaking: {text}")
-                    self.tts_engine.say(text)
-                    self.tts_engine.runAndWait()
+                    if text.strip():
+                        logger.info(f"Speaking: {text}")
+                        try:
+                            self.tts_engine.say(text)
+                            self.tts_engine.runAndWait()
+                        except Exception as e:
+                            logger.error(f"TTS playback error: {e}")
+                            # Try alternative approach
+                            try:
+                                self.tts_engine.stop()
+                                self.tts_engine.say(text)
+                                self.tts_engine.runAndWait()
+                            except:
+                                logger.error(f"TTS retry failed")
                 except Exception as e:
                     logger.error(f"TTS Error: {e}")
         
@@ -69,13 +81,14 @@ class VoiceEngine:
     
     def speak(self, text):
         """Add text to speech queue"""
-        if text:
+        if text and text.strip():
             self.speech_queue.put(text)
+            logger.info(f"Added to speech queue: {text[:50]}...")
     
     def listen(self, seconds=RECORD_SECONDS):
         """Listen to microphone and transcribe"""
         try:
-            logger.info(f"🎤 Listening for {seconds} seconds...")
+            logger.info(f"Listening for {seconds} seconds...")
             
             audio = sd.rec(
                 int(seconds * SAMPLE_RATE),
@@ -109,7 +122,7 @@ class VoiceEngine:
     def wait_for_wake_word(self, timeout=None):
         """Wait for wake word detection"""
         try:
-            logger.info("👂 Waiting for wake word...")
+            logger.info("Waiting for wake word...")
             
             with sd.InputStream(
                 samplerate=SAMPLE_RATE,
@@ -152,7 +165,7 @@ class VoiceEngine:
                     buffer.clear()
                     
                     if any(word in text for word in WAKE_WORDS):
-                        logger.info("✅ Wake word detected!")
+                        logger.info("Wake word detected!")
                         return True
         except Exception as e:
             logger.error(f"Wake word detection error: {e}")
@@ -162,3 +175,7 @@ class VoiceEngine:
         """Stop voice engine"""
         self.is_running = False
         self.speech_queue.put(None)
+        try:
+            self.tts_engine.stop()
+        except:
+            pass
